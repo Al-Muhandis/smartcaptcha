@@ -31,9 +31,9 @@ type
 implementation
 
 constructor TSmartCaptchaConfig.Create(const AServerKey: string);
-begin
-  FServerKey := AServerKey;
+begin                      
   Create;
+  FServerKey := AServerKey;
 end;
 
 constructor TSmartCaptchaConfig.Create;

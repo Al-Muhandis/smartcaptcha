@@ -32,6 +32,7 @@ type
     procedure DoLog(aLevel: TEventType; const aMessage: string); overload;
     procedure DoLog(aLevel: TEventType; const aMessage: string; const aArgs: array of const); overload;
     function MakeRequest(const AToken, AIP: string): TJSONObject;
+    function ValidateToken(const AToken: string): Boolean;
   public
     constructor Create;
     constructor Create(const AServerKey: string); overload;
@@ -130,6 +131,13 @@ begin
   end;
 end;
 
+function TSmartCaptcha.ValidateToken(const AToken: string): Boolean;
+begin
+  Result := not AToken.Trim.IsEmpty;
+  if not Result then
+    FLastError := 'Token cannot be empty or whitespace-only';
+end;
+
 constructor TSmartCaptcha.Create;
 begin
   FConfig:=TSmartCaptchaConfig.Create;
@@ -157,11 +165,21 @@ begin
   Result := False;
   FLastError := '';
 
-  if AToken.IsEmpty then
+  if not ValidateToken(AToken) then
   begin
-    FLastError := 'Token cannot be empty';
     DoLog(etWarning, 'SmartCaptcha: %s', [FLastError]);
     Exit;
+  end;
+
+  try
+    FConfig.Validate;
+  except
+    on E: ESmartCaptchaConfigError do
+    begin
+      FLastError := Format('Configuration error: %s', [E.Message]);
+      DoLog(etError, 'SmartCaptcha: %s', [FLastError]);
+      Exit;
+    end;
   end;
 
   DoLog(etDebug, 'SmartCaptcha: verifying token (length: %d)', [Length(AToken)]);
