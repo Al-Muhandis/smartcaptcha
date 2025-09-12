@@ -3,7 +3,8 @@ program test_gui;
 {$mode objfpc}{$H+}
 
 uses
-  Interfaces, Forms, GuiTestRunner, testsmartcaptcha;
+  Interfaces, Forms, GuiTestRunner, testsmartcaptcha
+  ;
 
 {$R *.res}
 

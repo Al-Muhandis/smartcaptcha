@@ -5,13 +5,14 @@ unit testsmartcaptcha;
 interface
 
 uses
-  Classes, SysUtils, fpcunit, testregistry, smartcaptcha, smartcaptcha_config, smartcaptcha_types, fpjson, fgl
+  Classes, SysUtils, fpcunit, testregistry, smartcaptcha, smartcaptcha_config, smartcaptcha_types, fpjson, fgl,
+  mocksmartcaptcha
   ;
 
 type
   TSmartCaptchaTest = class(TTestCase)
   private
-    FClient: TSmartCaptcha;
+    FClient: TMockSmartCaptcha;
     FLogMessages: TStringList;
     FLogLevels: specialize TFPGList<TEventType>;
     procedure OnLogEvent({%H-}Sender: TObject; Level: TEventType; const Message: string);
@@ -57,22 +58,6 @@ type
     procedure TestMaxLengthToken;
   end;
 
-  // Мок-класс для тестирования HTTP запросов
-
-  { TMockSmartCaptcha }
-
-  TMockSmartCaptcha = class(TSmartCaptcha)
-  private
-    FMockResponse: string;
-    FMockStatusCode: Integer;
-    FShouldThrowException: Boolean;
-    FExceptionMessage: string;
-  public
-    procedure SetMockResponse(const AResponse: string; AStatusCode: Integer = 200);
-    procedure SetMockException(const AMessage: string);
-    function MakeRequest(const AToken, AIP: string): TJSONObject;
-  end;
-
 implementation
 
 { TSmartCaptchaTest }
@@ -85,7 +70,7 @@ end;
 
 procedure TSmartCaptchaTest.SetUp;
 begin
-  FClient := TSmartCaptcha.Create('test-server-key-12345');
+  FClient := TMockSmartCaptcha.Create('test-server-key-12345');
   FLogMessages := TStringList.Create;
   FLogLevels := specialize TFPGList<TEventType>.Create;
   FClient.OnLog := @OnLogEvent;
@@ -252,9 +237,9 @@ end;
 
 procedure TSmartCaptchaTest.TestLoggingDisabled;
 var
-  aClient: TSmartCaptcha;
+  aClient: TMockSmartCaptcha;
 begin
-  aClient := TSmartCaptcha.Create('test-key');
+  aClient := TMockSmartCaptcha.Create('test-key');
   try
     // Без обработчика логов
     aClient.VerifyToken('test-token');
@@ -296,9 +281,9 @@ end;
 
 procedure TSmartCaptchaTest.TestCreateWithoutKey;
 var
-  aClient: TSmartCaptcha;
+  aClient: TMockSmartCaptcha;
 begin
-  aClient := TSmartCaptcha.Create;
+  aClient := TMockSmartCaptcha.Create;
   try
     AssertEquals('', aClient.Config.ServerKey);
   finally
@@ -308,9 +293,9 @@ end;
 
 procedure TSmartCaptchaTest.TestCreateWithKey;
 var
-  aClient: TSmartCaptcha;
+  aClient: TMockSmartCaptcha;
 begin
-  aClient := TSmartCaptcha.Create('my-server-key');
+  aClient := TMockSmartCaptcha.Create('my-server-key');
   try
     AssertEquals('my-server-key', aClient.Config.ServerKey);
   finally
@@ -322,8 +307,8 @@ procedure TSmartCaptchaTest.TestCreateMultipleInstances;
 var
   aClient1, aClient2: TSmartCaptcha;
 begin
-  aClient1 := TSmartCaptcha.Create('key1');
-  aClient2 := TSmartCaptcha.Create('key2');
+  aClient1 := TMockSmartCaptcha.Create('key1');
+  aClient2 := TMockSmartCaptcha.Create('key2');
   try
     AssertEquals('key1', aClient1.Config.ServerKey);
     AssertEquals('key2', aClient2.Config.ServerKey);
@@ -363,26 +348,6 @@ begin
   aMaxToken := StringOfChar('A', 4096);
   FClient.VerifyToken(aMaxToken);
   AssertTrue(FLogMessages.Count > 0);
-end;
-
-{ TMockSmartCaptcha }
-
-procedure TMockSmartCaptcha.SetMockResponse(const AResponse: string; AStatusCode: Integer);
-begin
-  FMockResponse := AResponse;
-  FMockStatusCode := AStatusCode;
-  FShouldThrowException := False;
-end;
-
-procedure TMockSmartCaptcha.SetMockException(const AMessage: string);
-begin
-  FShouldThrowException := True;
-  FExceptionMessage := AMessage;
-end;
-
-function TMockSmartCaptcha.MakeRequest(const AToken, AIP: string): TJSONObject;
-begin
-
 end;
 
 initialization

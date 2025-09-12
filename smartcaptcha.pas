@@ -27,12 +27,13 @@ type
     FConfig: TSmartCaptchaConfig;
     FLogger: TEventLog;
     FOnLog: TSmartCaptchaLogEvent;
-    FLastError: string;
     FSkipNon200: Boolean;
+    function ValidateToken(const AToken: string): Boolean;
+  protected                                                      
+    FLastError: string;                                                                                
     procedure DoLog(aLevel: TEventType; const aMessage: string); overload;
     procedure DoLog(aLevel: TEventType; const aMessage: string; const aArgs: array of const); overload;
-    function MakeRequest(const AToken, AIP: string): TJSONObject;
-    function ValidateToken(const AToken: string): Boolean;
+    function MakeRequest(const AToken, AIP: string): TJSONObject; virtual;
   public
     constructor Create;
     constructor Create(const AServerKey: string); overload;
@@ -140,8 +141,8 @@ end;
 
 constructor TSmartCaptcha.Create;
 begin
-  FConfig:=TSmartCaptchaConfig.Create;
   inherited Create;
+  FConfig:=TSmartCaptchaConfig.Create;
 end;
 
 constructor TSmartCaptcha.Create(const AServerKey: string);
