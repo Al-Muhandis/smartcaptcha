@@ -8,7 +8,7 @@ unit smartcaptcha_rt;
 interface
 
 uses
-  smartcaptcha, LazarusPackageIntf;
+  smartcaptcha, smartcaptcha_config, smartcaptcha_types, LazarusPackageIntf;
 
 implementation
 

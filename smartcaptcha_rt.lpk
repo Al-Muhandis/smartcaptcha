@@ -16,6 +16,14 @@
         <Filename Value="smartcaptcha.pas"/>
         <UnitName Value="smartcaptcha"/>
       </Item>
+      <Item>
+        <Filename Value="smartcaptcha_config.pas"/>
+        <UnitName Value="smartcaptcha_config"/>
+      </Item>
+      <Item>
+        <Filename Value="smartcaptcha_types.pas"/>
+        <UnitName Value="smartcaptcha_types"/>
+      </Item>
     </Files>
     <RequiredPkgs>
       <Item>

@@ -1,14 +1,20 @@
 unit smartcaptcha;
 
 {$mode ObjFPC}{$H+}
+{$interfaces CORBA}
 
 interface
 
 uses
-  SysUtils, eventlog
+  SysUtils, eventlog, smartcaptcha_types, smartcaptcha_config, fpjson
   ;
 
 type
+  ISmartCaptchaClient = interface
+  ['{B3DBA86E-8936-4632-9A8B-50E1A0EF5372}']
+    function VerifyToken(const AToken: string; const AIP: String = ''): Boolean;
+    function GetLastError: string;
+  end;
 
   TSmartCaptcha = class;
 
@@ -16,78 +22,188 @@ type
 
   { TSmartCaptcha }
 
-  TSmartCaptcha = class
+  TSmartCaptcha = class(TObject, ISmartCaptchaClient)
   private
+    FConfig: TSmartCaptchaConfig;
     FLogger: TEventLog;
-    FOnLog: TLogNotify;
-    procedure Log(aEvent: TEventType; const aMessage: String);
-    procedure Log(aEvent: TEventType; const aMessage: String; aArgs: array of const);
+    FOnLog: TSmartCaptchaLogEvent;
+    FLastError: string;
+    FSkipNon200: Boolean;
+    procedure DoLog(aLevel: TEventType; const aMessage: string); overload;
+    procedure DoLog(aLevel: TEventType; const aMessage: string; const aArgs: array of const); overload;
+    function MakeRequest(const AToken, AIP: string): TJSONObject;
   public
-    function check_captcha(const aSmartCaptchaServerKey, aToken: string; const aIP: String = ''): Boolean;
+    constructor Create;
+    constructor Create(const AServerKey: string); overload;
+    destructor Destroy; override;
+
+    function VerifyToken(const aToken: string; const aIP: String = ''): Boolean;
+    function GetLastError: string;
+
+    property Config: TSmartCaptchaConfig read FConfig;
     property Logger: TEventLog read FLogger write FLogger;
-    property OnLog: TLogNotify read FOnLog write FOnLog;
+    property OnLog: TSmartCaptchaLogEvent read FOnLog write FOnLog;
+    property SkipNon200: Boolean read FSkipNon200 write FSkipNon200;
   end;
 
 implementation
 
 uses
-  fphttpclient, fpjson
+  fphttpclient, Classes
   ;
 
 { TSmartCaptcha }
 
-procedure TSmartCaptcha.Log(aEvent: TEventType; const aMessage: String);
+procedure TSmartCaptcha.DoLog(aLevel: TEventType; const aMessage: string);
 begin
   if Assigned(FLogger) then
-    FLogger.Log(aEvent, aMessage);
+    FLogger.Log(ALevel, aMessage);
   if Assigned(FOnLog) then
-    FOnLog(Self, aEvent, aMessage);
+    FOnLog(Self, ALevel, aMessage);
 end;
 
-procedure TSmartCaptcha.Log(aEvent: TEventType; const aMessage: String; aArgs: array of const);
+procedure TSmartCaptcha.DoLog(aLevel: TEventType; const aMessage: string; const aArgs: array of const);
 begin
-  if Assigned(FLogger) then
-    FLogger.Log(aEvent, aMessage, aArgs);
-  if Assigned(FOnLog) then
-    FOnLog(Self, aEvent, Format(aMessage, aArgs));
+  DoLog(aLevel, Format(aMessage, AArgs));
 end;
 
-function TSmartCaptcha.check_captcha(const aSmartCaptchaServerKey, aToken: string; const aIP: String): Boolean;
+function TSmartCaptcha.MakeRequest(const AToken, AIP: string): TJSONObject;
 var
   aHTTP: TFPHTTPClient;
-  args: string;
-  aServer_output: string;
-  aHttpcode: integer;
-  aResp: TJSONData;
+  aPostData: TStringList;
+  aResponse: string;
+  aResponseCode: Integer;
 begin
+  Result := nil;
+  FLastError := '';
+
   aHTTP := TFPHTTPClient.Create(nil);
   try
-    args := 'secret=' + aSmartCaptchaServerKey + '&token=' + aToken;
-    if not aIP.IsEmpty then
-      args+='&ip='+aIP;
+    aHTTP.ConnectTimeout := FConfig.ConnectTimeout;
+    aHTTP.IOTimeout := FConfig.IOTimeout;
+
+    aPostData := TStringList.Create;
     try
-      aServer_output := aHTTP.Get('https://smartcaptcha.yandexcloud.net/validate?' + args);
-      aHttpcode := aHTTP.ResponseStatusCode;
-
-      if aHttpcode <> 200 then begin
-        Log(etError, 'Allow access due to an error: code=%d; message=%s', [aHttpcode, aServer_output]);
-        Result := true;
-        Exit;
-      end;
-
-      aResp := GetJSON(aServer_output);
+      aPostData.AddPair('secret', EncodeURLElement(FConfig.ServerKey));
+      aPostData.AddPair('token', EncodeURLElement(aToken));
+      if not aIP.IsEmpty then
+        aPostData.AddPair('ip', aIP);
+      aHTTP.AddHeader('User-Agent', 'YandexSmartCaptcha-FPC/1.0');
       try
-        Result := aResp.FindPath('status').AsString = 'ok';
-      finally
-        aResp.Free;
+        aResponse := aHTTP.FormPost(FConfig.BaseURL, aPostData);
+        aResponseCode := aHTTP.ResponseStatusCode;
+
+        DoLog(etDebug, 'SmartCaptcha response: HTTP %d, body length: %d', [aResponseCode, Length(aResponse)]);
+
+        if aResponseCode <> 200 then begin
+          FLastError := Format('HTTP error %d: %s', [aResponseCode, aResponse]);
+          DoLog(etError, 'SmartCaptcha HTTP error: %s', [FLastError]);
+          Exit;
+        end;
+
+        if aResponse.IsEmpty then begin
+          FLastError := 'Empty response from server';
+          DoLog(etError, 'SmartCaptcha: %s', [FLastError]);
+          Exit;
+        end;
+
+        try
+          Result := GetJSON(aResponse) as TJSONObject;
+        except
+          on E: Exception do
+          begin
+            FLastError := Format('JSON parse error: %s', [E.Message]);
+            DoLog(etError, 'SmartCaptcha JSON error: %s', [FLastError]);
+          end;
+        end;
+
+      except
+        on E: Exception do
+          DoLog(etError, 'SmartCaptcha request error: %s', [E.Message]);
       end;
-    except
-      on E: Exception do
-        Log(etError, 'Error during processing response: %s', [E.Message]);
+
+    finally
+      aPostData.Free;
     end;
   finally
     aHTTP.Free;
   end;
+end;
+
+constructor TSmartCaptcha.Create;
+begin
+  FConfig:=TSmartCaptchaConfig.Create;
+  inherited Create;
+end;
+
+constructor TSmartCaptcha.Create(const AServerKey: string);
+begin
+  FConfig:=TSmartCaptchaConfig.Create(AServerKey);
+  inherited Create;
+end;
+
+destructor TSmartCaptcha.Destroy;
+begin
+  FConfig.Free;
+  inherited Destroy;
+end;
+
+function TSmartCaptcha.VerifyToken(const aToken: string; const aIP: String): Boolean;
+var
+  aResponseObj: TJSONObject;
+  aStatusNode: TJSONData;
+  aMessageNode: TJSONData;
+begin
+  Result := False;
+  FLastError := '';
+
+  if AToken.IsEmpty then
+  begin
+    FLastError := 'Token cannot be empty';
+    DoLog(etWarning, 'SmartCaptcha: %s', [FLastError]);
+    Exit;
+  end;
+
+  DoLog(etDebug, 'SmartCaptcha: verifying token (length: %d)', [Length(AToken)]);
+
+  aResponseObj := MakeRequest(aToken, aIP);
+  if not Assigned(aResponseObj) then
+    Exit; // Ошибка уже залогирована в MakeRequest
+
+  try
+    aStatusNode := aResponseObj.FindPath('status');
+    if not Assigned(aStatusNode) then
+    begin
+      FLastError := 'Missing "status" field in response';
+      DoLog(etError, 'SmartCaptcha: %s', [FLastError]);
+      Exit;
+    end;
+
+    Result := aStatusNode.AsString = 'ok';
+
+    if not Result then
+    begin
+      // Попытаемся получить сообщение об ошибке
+      aMessageNode := aResponseObj.FindPath('message');
+      if Assigned(aMessageNode) then
+        FLastError := aMessageNode.AsString
+      else
+        FLastError := Format('Verification failed: status = "%s"', [aStatusNode.AsString]);
+
+      DoLog(etWarning, 'SmartCaptcha verification failed: %s', [FLastError]);
+    end else
+    begin
+      DoLog(etInfo, 'SmartCaptcha: verification successful');
+    end;
+
+  finally
+    aResponseObj.Free;
+  end;
+end;
+
+function TSmartCaptcha.GetLastError: string;
+begin
+  Result:=FLastError;
 end;
 
 end.
