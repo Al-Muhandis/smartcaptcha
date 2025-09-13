@@ -20,42 +20,77 @@ type
     procedure SetUp; override;
     procedure TearDown; override;
   published
-    // Тесты конфигурации
+    // Config tests
     procedure TestConfigValidation;
     procedure TestConfigWithValidKey;
     procedure TestConfigDefaults;
     procedure TestConfigTimeouts;
 
-    // Тесты токенов
+    // Token tests
     procedure TestEmptyToken;
     procedure TestWhitespaceToken;
     procedure TestVeryLongToken;
     procedure TestSpecialCharactersInToken;
 
-    // Тесты IP адресов
+    // IP tests
     procedure TestWithValidIP;
     procedure TestWithInvalidIP;
     procedure TestWithEmptyIP;
     procedure TestWithIPv6;
 
-    // Тесты логирования
+    // Logging tests
     procedure TestLoggingEnabled;
     procedure TestLoggingDisabled;
     procedure TestDifferentLogLevels;
 
-    // Тесты ошибок
+    // Error tests
     procedure TestLastErrorInitialization;
     procedure TestLastErrorPersistence;
 
-    // Тесты создания объектов
+    // Object creation tests
     procedure TestCreateWithoutKey;
     procedure TestCreateWithKey;
     procedure TestCreateMultipleInstances;
 
-    // Тесты граничных случаев
+    // Edge cases tests
     procedure TestNullByteInToken;
     procedure TestUnicodeInToken;
     procedure TestMaxLengthToken;
+
+    // Suscess responses tests
+    procedure TestSuccessfulVerification;
+    procedure TestSuccessfulVerificationWithIP;
+    procedure TestRequestParametersCapture;
+
+    // Various server error tests
+    procedure TestServerFailureResponse;
+    procedure TestServerFailureWithCustomMessage;
+    procedure TestHTTPErrorResponses;
+    procedure TestEmptyServerResponse;
+    procedure TestInvalidJSONResponse;
+    procedure TestMissingStatusField;
+    procedure TestNetworkException;
+
+    // Query sequence tests
+    procedure TestMultipleSuccessfulRequests;
+    procedure TestMixedResponses;
+    procedure TestRequestSequence;
+
+    // Tests of ready-made mock methods
+    procedure TestSetupSuccessResponse;
+    procedure TestSetupFailureResponse;
+    procedure TestSetupNetworkErrorResponse;
+    procedure TestSetupInvalidJsonResponse;
+
+    // Mock Response reset Tests
+    procedure TestResetMockResponses;
+    procedure TestMockResponsesExhaustion;
+
+    // Tests of various status codes
+    procedure TestDifferentHTTPStatusCodes;
+
+    // Edge cases tests for JSON responses
+    procedure TestJSONResponseEdgeCases;
   end;
 
 implementation
@@ -83,13 +118,10 @@ begin
   FLogLevels.Free;
 end;
 
-// Тесты конфигурации
-
 procedure TSmartCaptchaTest.TestConfigValidation;
 var
   aConfig: TSmartCaptchaConfig;
 begin
-  // Тест пустого ключа
   aConfig := TSmartCaptchaConfig.Create('');
   try
     AssertException(ESmartCaptchaConfigError, @aConfig.Validate);
@@ -97,7 +129,6 @@ begin
     aConfig.Free;
   end;
 
-  // Тест с валидным ключом
   aConfig := TSmartCaptchaConfig.Create('valid-key');
   try
     aConfig.Validate;
@@ -142,7 +173,6 @@ var
 begin
   aConfig := TSmartCaptchaConfig.Create('test-key');
   try
-    // Тест отрицательных таймаутов
     aConfig.ConnectTimeout := -1;
     AssertException(ESmartCaptchaConfigError, @aConfig.Validate);
 
@@ -150,7 +180,6 @@ begin
     aConfig.IOTimeout := 0;
     AssertException(ESmartCaptchaConfigError, @aConfig.Validate);
 
-    // Тест валидных таймаутов
     aConfig.ConnectTimeout := 1000;
     aConfig.IOTimeout := 5000;
     aConfig.Validate;
@@ -158,8 +187,6 @@ begin
     aConfig.Free;
   end;
 end;
-
-// Тесты токенов
 
 procedure TSmartCaptchaTest.TestEmptyToken;
 begin
@@ -170,67 +197,75 @@ end;
 procedure TSmartCaptchaTest.TestWhitespaceToken;
 begin
   AssertFalse(FClient.VerifyToken('   '));
-  // Пробельный токен не должен проходить валидацию
+  AssertTrue(FClient.GetLastError.Contains('Token cannot be empty'));
 end;
 
 procedure TSmartCaptchaTest.TestVeryLongToken;
 var
   aLongToken: string;
 begin
-  // Создаем очень длинный токен (10KB)
   aLongToken := StringOfChar('a', 10240);
-  // Тест не должен падать, но токен скорее всего будет невалидным
-  FClient.VerifyToken(aLongToken);
-  // Проверяем, что запрос был сделан (есть логи)
+  FClient.SetupSuccessResponse;
+  AssertTrue(FClient.VerifyToken(aLongToken));
   AssertTrue(FLogMessages.Count > 0);
 end;
 
 procedure TSmartCaptchaTest.TestSpecialCharactersInToken;
 const
   SPECIAL_CHARS = '!@#$%^&*()_+-=[]{}|;:,.<>?`~';
+var
+  aTokenWithSpecialChars: string;
 begin
-  // Токен со специальными символами
-  FClient.VerifyToken('token-with-' + SPECIAL_CHARS);
-  // Должен корректно обработаться (URL encoding)
-  AssertTrue(FLogMessages.Count > 0);
-end;
+  aTokenWithSpecialChars := 'token-with-' + SPECIAL_CHARS;
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
 
-// Тесты IP адресов
+  AssertTrue(FClient.VerifyToken(aTokenWithSpecialChars));
+  AssertEquals(aTokenWithSpecialChars, FClient.LastToken);
+end;
 
 procedure TSmartCaptchaTest.TestWithValidIP;
 begin
-  FClient.VerifyToken('test-token', '192.168.1.1');
-  // Проверяем, что IP был передан в запрос
-  AssertTrue(FLogMessages.Count > 0);
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken('test-token', '192.168.1.1'));
+  AssertEquals('test-token', FClient.LastToken);
+  AssertEquals('192.168.1.1', FClient.LastIP);
 end;
 
 procedure TSmartCaptchaTest.TestWithInvalidIP;
 begin
-  FClient.VerifyToken('test-token', '999.999.999.999');
-  // Должен обработать некорректный IP без падения
-  AssertTrue(FLogMessages.Count > 0);
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken('test-token', '999.999.999.999'));
+  AssertEquals('999.999.999.999', FClient.LastIP);
 end;
 
 procedure TSmartCaptchaTest.TestWithEmptyIP;
 begin
-  FClient.VerifyToken('test-token', '');
-  // Пустой IP должен игнорироваться
-  AssertTrue(FLogMessages.Count > 0);
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken('test-token', ''));
+  AssertEquals('', FClient.LastIP);
 end;
 
 procedure TSmartCaptchaTest.TestWithIPv6;
 begin
-  FClient.VerifyToken('test-token', '2001:db8::1');
-  // IPv6 адрес должен корректно обрабатываться
-  AssertTrue(FLogMessages.Count > 0);
-end;
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
 
-// Тесты логирования
+  AssertTrue(FClient.VerifyToken('test-token', '2001:db8::1'));
+  AssertEquals('2001:db8::1', FClient.LastIP);
+end;
 
 procedure TSmartCaptchaTest.TestLoggingEnabled;
 begin
-  FClient.VerifyToken('test-token');
-  // Должны быть логи о выполнении запроса
+  FClient.SetupSuccessResponse;
+  AssertTrue(FClient.VerifyToken('test-token'));
+
   AssertTrue(FLogMessages.Count > 0);
   AssertTrue(FLogMessages.Text.Contains('verifying token'));
 end;
@@ -241,10 +276,8 @@ var
 begin
   aClient := TMockSmartCaptcha.Create('test-key');
   try
-    // Без обработчика логов
-    aClient.VerifyToken('test-token');
-    // Не должно быть исключений
-    AssertTrue(True); // Тест прошел, если дошли до этой строки
+    aClient.SetupSuccessResponse;
+    AssertTrue(aClient.VerifyToken('test-token'));
   finally
     aClient.Free;
   end;
@@ -252,32 +285,28 @@ end;
 
 procedure TSmartCaptchaTest.TestDifferentLogLevels;
 begin
-  FClient.VerifyToken('');  // Вызовет Warning
-  FClient.VerifyToken('test-token');  // Вызовет Debug и Error
+  FClient.VerifyToken('');  // Warning level
+  FClient.SetupSuccessResponse;
+  FClient.VerifyToken('test-token');  // Debug and Info levels
 
-  // Проверяем наличие разных уровней логов
-  AssertTrue(FLogLevels.Count > 0);
+  AssertTrue(FLogLevels.Count >= 2);
+  AssertTrue(FLogLevels.IndexOf(etWarning) >= 0);
+  AssertTrue(FLogLevels.IndexOf(etDebug) >= 0);
 end;
-
-// Тесты ошибок
 
 procedure TSmartCaptchaTest.TestLastErrorInitialization;
 begin
-  // При создании объекта ошибок быть не должно
   AssertEquals('', FClient.GetLastError);
 end;
 
 procedure TSmartCaptchaTest.TestLastErrorPersistence;
 begin
-  FClient.VerifyToken(''); // Вызовет ошибку
-  AssertFalse('Must be not empty!', FClient.GetLastError.IsEmpty);
+  FClient.VerifyToken('');
+  AssertFalse(FClient.GetLastError.IsEmpty);
 
-  // После успешного вызова ошибка должна сбрасываться
+  FClient.SetupSuccessResponse;
   FClient.VerifyToken('valid-token');
-  // В реальности будет ошибка сети, но LastError сбросится в начале метода
 end;
-
-// Тесты создания объектов
 
 procedure TSmartCaptchaTest.TestCreateWithoutKey;
 var
@@ -319,35 +348,277 @@ begin
   end;
 end;
 
-// Тесты граничных случаев
-
 procedure TSmartCaptchaTest.TestNullByteInToken;
 var
   aTokenWithNull: string;
 begin
   aTokenWithNull := 'token' + #0 + 'with-null';
-  // Не должно приводить к падению
-  FClient.VerifyToken(aTokenWithNull);
-  AssertTrue(FLogMessages.Count > 0);
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken(aTokenWithNull));
+  AssertEquals(aTokenWithNull, FClient.LastToken);
 end;
 
 procedure TSmartCaptchaTest.TestUnicodeInToken;
 const
   UNICODE_TOKEN = 'токен-с-юникодом-🔐-тест';
 begin
-  FClient.VerifyToken(UNICODE_TOKEN);
-  // Должен корректно обрабатывать Unicode
-  AssertTrue(FLogMessages.Count > 0);
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken(UNICODE_TOKEN));
+  AssertEquals(UNICODE_TOKEN, FClient.LastToken);
 end;
 
 procedure TSmartCaptchaTest.TestMaxLengthToken;
 var
   aMaxToken: string;
 begin
-  // Тест максимально длинного разумного токена
   aMaxToken := StringOfChar('A', 4096);
-  FClient.VerifyToken(aMaxToken);
+  FClient.SetupSuccessResponse;
+
+  AssertTrue(FClient.VerifyToken(aMaxToken));
   AssertTrue(FLogMessages.Count > 0);
+end;
+
+procedure TSmartCaptchaTest.TestSuccessfulVerification;
+begin
+  FClient.SetupSuccessResponse;
+
+  AssertTrue(FClient.VerifyToken('valid-token-123'));
+  AssertEquals('', FClient.GetLastError);
+
+  AssertTrue(FLogMessages.Text.Contains('verification successful'));
+end;
+
+procedure TSmartCaptchaTest.TestSuccessfulVerificationWithIP;
+begin
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken('valid-token', '203.0.113.42'));
+  AssertEquals('valid-token', FClient.LastToken);
+  AssertEquals('203.0.113.42', FClient.LastIP);
+end;
+
+procedure TSmartCaptchaTest.TestRequestParametersCapture;
+begin
+  FClient.SetupSuccessResponse;
+  FClient.EnableRequestCapture;
+
+  FClient.VerifyToken('captured-token', '10.0.0.1');
+
+  AssertEquals('captured-token', FClient.LastToken);
+  AssertEquals('10.0.0.1', FClient.LastIP);
+end;
+
+procedure TSmartCaptchaTest.TestServerFailureResponse;
+begin
+  FClient.SetupFailureResponse('invalid-token');
+
+  AssertFalse(FClient.VerifyToken('bad-token'));
+  AssertTrue(FClient.GetLastError.Contains('invalid-token'));
+
+  AssertTrue(FLogMessages.Text.Contains('verification failed'));
+end;
+
+procedure TSmartCaptchaTest.TestServerFailureWithCustomMessage;
+const
+  CUSTOM_ERROR = 'Token expired or malformed';
+begin
+  FClient.SetupFailureResponse(CUSTOM_ERROR);
+
+  AssertFalse(FClient.VerifyToken('expired-token'));
+  AssertEquals(CUSTOM_ERROR, FClient.GetLastError);
+end;
+
+procedure TSmartCaptchaTest.TestHTTPErrorResponses;
+begin
+  FClient.AddMockResponse(404, 'Not Found');
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('HTTP error 404'));
+
+  FClient.ResetMockResponses;
+
+  FClient.AddMockResponse(500, 'Internal Server Error');
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('HTTP error 500'));
+
+  FClient.ResetMockResponses;
+
+  FClient.AddMockResponse(403, 'Forbidden');
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('HTTP error 403'));
+end;
+
+procedure TSmartCaptchaTest.TestEmptyServerResponse;
+begin
+  FClient.AddMockResponse(200, '');
+
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('Empty response'));
+end;
+
+procedure TSmartCaptchaTest.TestInvalidJSONResponse;
+begin
+  FClient.SetupInvalidJsonResponse;
+
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('JSON parse error'));
+end;
+
+procedure TSmartCaptchaTest.TestMissingStatusField;
+begin
+  FClient.AddMockResponse(200, '{"message": "no status field"}');
+
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertTrue(FClient.GetLastError.Contains('Missing "status" field'));
+end;
+
+procedure TSmartCaptchaTest.TestNetworkException;
+begin
+  FClient.SetupNetworkErrorResponse;
+
+  AssertFalse(FClient.VerifyToken('some-token'));
+  AssertEquals('Connection timeout', FClient.GetLastError);
+end;
+
+procedure TSmartCaptchaTest.TestMultipleSuccessfulRequests;
+begin
+  FClient.SetupSuccessResponse;
+  FClient.SetupSuccessResponse;
+  FClient.SetupSuccessResponse;
+
+  AssertTrue(FClient.VerifyToken('token1'));
+  AssertTrue(FClient.VerifyToken('token2'));
+  AssertTrue(FClient.VerifyToken('token3'));
+end;
+
+procedure TSmartCaptchaTest.TestMixedResponses;
+begin
+  FClient.SetupSuccessResponse;
+  FClient.SetupFailureResponse('invalid');
+  FClient.SetupSuccessResponse;
+
+  AssertTrue(FClient.VerifyToken('good-token1'));
+  AssertFalse(FClient.VerifyToken('bad-token'));
+  AssertTrue(FClient.VerifyToken('good-token2'));
+end;
+
+procedure TSmartCaptchaTest.TestRequestSequence;
+begin
+  FClient.AddMockResponse(200, '{"status": "ok"}');
+  FClient.AddMockResponse(400, 'Bad Request');
+  FClient.AddMockResponse(200, '{"status": "failed", "message": "rate-limited"}');
+  FClient.EnableRequestCapture;
+
+  AssertTrue(FClient.VerifyToken('token1', '1.1.1.1'));
+  AssertEquals('token1', FClient.LastToken);
+  AssertEquals('1.1.1.1', FClient.LastIP);
+
+  AssertFalse(FClient.VerifyToken('token2', '2.2.2.2'));
+  AssertEquals('token2', FClient.LastToken);
+  AssertEquals('2.2.2.2', FClient.LastIP);
+
+  AssertFalse(FClient.VerifyToken('token3'));
+  AssertEquals('token3', FClient.LastToken);
+  AssertTrue(FClient.GetLastError.Contains('rate-limited'));
+end;
+
+procedure TSmartCaptchaTest.TestSetupSuccessResponse;
+begin
+  FClient.SetupSuccessResponse;
+  AssertTrue(FClient.VerifyToken('any-token'));
+  AssertEquals('', FClient.GetLastError);
+end;
+
+procedure TSmartCaptchaTest.TestSetupFailureResponse;
+begin
+  FClient.SetupFailureResponse;
+  AssertFalse(FClient.VerifyToken('any-token'));
+  AssertTrue(FClient.GetLastError.Contains('invalid-token'));
+
+  FClient.ResetMockResponses;
+  FClient.SetupFailureResponse('custom-error-message');
+  AssertFalse(FClient.VerifyToken('any-token'));
+  AssertEquals('custom-error-message', FClient.GetLastError);
+end;
+
+procedure TSmartCaptchaTest.TestSetupNetworkErrorResponse;
+begin
+  FClient.SetupNetworkErrorResponse;
+  AssertFalse(FClient.VerifyToken('any-token'));
+  AssertEquals('Connection timeout', FClient.GetLastError);
+end;
+
+procedure TSmartCaptchaTest.TestSetupInvalidJsonResponse;
+begin
+  FClient.SetupInvalidJsonResponse;
+  AssertFalse(FClient.VerifyToken('any-token'));
+  AssertTrue(FClient.GetLastError.Contains('JSON parse error'));
+end;
+
+procedure TSmartCaptchaTest.TestResetMockResponses;
+begin
+  FClient.SetupSuccessResponse;
+  FClient.SetupFailureResponse;
+
+  FClient.ResetMockResponses;
+
+  AssertFalse(FClient.VerifyToken('any-token'));
+  AssertTrue(FClient.GetLastError.Contains('No mock response configured'));
+end;
+
+procedure TSmartCaptchaTest.TestMockResponsesExhaustion;
+begin
+  FClient.SetupSuccessResponse;
+
+  AssertTrue(FClient.VerifyToken('token1'));
+
+  AssertFalse(FClient.VerifyToken('token2'));
+  AssertTrue(FClient.GetLastError.Contains('No mock response configured'));
+end;
+
+procedure TSmartCaptchaTest.TestDifferentHTTPStatusCodes;
+const
+  HTTP_CODES: array[0..6] of Integer = (400, 401, 403, 404, 429, 500, 503);
+var
+  i: Integer;
+begin
+  for i := Low(HTTP_CODES) to High(HTTP_CODES) do
+  begin
+    FClient.ResetMockResponses;
+    FClient.AddMockResponse(HTTP_CODES[i], Format('Error %d', [HTTP_CODES[i]]));
+
+    AssertFalse(FClient.VerifyToken('test-token'));
+    AssertTrue(FClient.GetLastError.Contains(Format('HTTP error %d', [HTTP_CODES[i]])));
+  end;
+end;
+
+procedure TSmartCaptchaTest.TestJSONResponseEdgeCases;
+begin
+  FClient.ResetMockResponses;
+  FClient.AddMockResponse(200, '{"status": "ok", "extra_field": "value", "timestamp": 1234567890}');
+  AssertTrue(FClient.VerifyToken('test-token'));
+
+  FClient.ResetMockResponses;
+  FClient.AddMockResponse(200, '{"status": true}');
+  AssertFalse(FClient.VerifyToken('test-token'));
+
+  FClient.ResetMockResponses;
+  FClient.AddMockResponse(200, '{"response": {"status": "ok"}}');
+  AssertFalse(FClient.VerifyToken('test-token'));
+  AssertTrue(FClient.GetLastError.Contains('Missing "status" field'));
+
+  FClient.ResetMockResponses;
+  FClient.AddMockResponse(200, '{}');
+  AssertFalse(FClient.VerifyToken('test-token'));
+  AssertTrue(FClient.GetLastError.Contains('Missing "status" field'));
+
+  FClient.ResetMockResponses;
+  FClient.AddMockResponse(200, '{"status": "ok", "data": "' + StringOfChar('x', 10000) + '"}');
+  AssertTrue(FClient.VerifyToken('test-token'));
 end;
 
 initialization

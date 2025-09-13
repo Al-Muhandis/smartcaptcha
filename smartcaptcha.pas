@@ -187,7 +187,7 @@ begin
 
   aResponseObj := MakeRequest(aToken, aIP);
   if not Assigned(aResponseObj) then
-    Exit; // Ошибка уже залогирована в MakeRequest
+    Exit;
 
   try
     aStatusNode := aResponseObj.FindPath('status');
@@ -202,7 +202,6 @@ begin
 
     if not Result then
     begin
-      // Попытаемся получить сообщение об ошибке
       aMessageNode := aResponseObj.FindPath('message');
       if Assigned(aMessageNode) then
         FLastError := aMessageNode.AsString

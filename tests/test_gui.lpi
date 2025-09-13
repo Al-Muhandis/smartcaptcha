@@ -160,6 +160,9 @@
       <Item>
         <Name Value="ESmartCaptchaConfigError"/>
       </Item>
+      <Item>
+        <Name Value="EJSONParser"/>
+      </Item>
     </Exceptions>
   </Debugging>
 </CONFIG>
