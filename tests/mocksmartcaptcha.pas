@@ -31,17 +31,17 @@ type
     constructor Create;
     constructor Create(const AServerKey: string);
 
-    // Методы для настройки mock поведения
+    // Methods for configuring mock behavior
     procedure AddMockResponse(StatusCode: Integer; const Body: string);
     procedure AddMockException(const ExceptionMessage: string);
     procedure ResetMockResponses;
 
-    // Методы для проверки последнего запроса
+    // Methods for checking the last request
     procedure EnableRequestCapture;
     property LastToken: string read FLastToken;
     property LastIP: string read FLastIP;
 
-    // Готовые mock ответы
+    // Ready-made mock responses
     procedure SetupSuccessResponse;
     procedure SetupFailureResponse(const ErrorMessage: string = 'invalid-token');
     procedure SetupNetworkErrorResponse;
@@ -65,19 +65,19 @@ end;
 
 function TMockSmartCaptcha.MakeRequest(const AToken, AIP: string): TJSONObject;
 var
-  MockResp: TMockResponse;
+  aMockResp: TMockResponse;
 begin
   Result := nil;
   FLastError := '';
 
-  // Захватываем параметры запроса если включено
+  // Capturing the request parameters if enabled
   if FCaptureLastRequest then
   begin
     FLastToken := AToken;
     FLastIP := AIP;
   end;
 
-  // Проверяем, есть ли настроенные mock ответы
+  // Checking if there are configured mock responses.
   if (FCurrentResponseIndex >= Length(FMockResponses)) then
   begin
     FLastError := 'No mock response configured';
@@ -85,39 +85,39 @@ begin
     Exit;
   end;
 
-  MockResp := FMockResponses[FCurrentResponseIndex];
+  aMockResp := FMockResponses[FCurrentResponseIndex];
   Inc(FCurrentResponseIndex);
 
   DoLog(etDebug, 'Mock: returning response %d with status %d',
-    [FCurrentResponseIndex, MockResp.StatusCode]);
+    [FCurrentResponseIndex, aMockResp.StatusCode]);
 
-  // Симулируем исключение если нужно
-  if MockResp.ShouldThrow then
+  // Simulate an exception if necessary
+  if aMockResp.ShouldThrow then
   begin
-    FLastError := MockResp.ExceptionMessage;
+    FLastError := aMockResp.ExceptionMessage;
     DoLog(etError, 'Mock: simulating exception: %s', [FLastError]);
     Exit;
   end;
 
-  // Симулируем HTTP ошибку
-  if MockResp.StatusCode <> 200 then
+  // Simulating an HTTP error
+  if aMockResp.StatusCode <> 200 then
   begin
-    FLastError := Format('HTTP error %d: %s', [MockResp.StatusCode, MockResp.Body]);
+    FLastError := Format('HTTP error %d: %s', [aMockResp.StatusCode, aMockResp.Body]);
     DoLog(etError, 'Mock: simulating HTTP error: %s', [FLastError]);
     Exit;
   end;
 
-  // Симулируем пустой ответ
-  if MockResp.Body.IsEmpty then
+  // Simulate an empty response
+  if aMockResp.Body.IsEmpty then
   begin
     FLastError := 'Empty response from server';
     DoLog(etError, 'Mock: %s', [FLastError]);
     Exit;
   end;
 
-  // Пытаемся парсить JSON
+  // Try to parse JSON
   try
-    Result := GetJSON(MockResp.Body) as TJSONObject;
+    Result := GetJSON(aMockResp.Body) as TJSONObject;
     DoLog(etDebug, 'Mock: successfully parsed JSON response');
   except
     on E: Exception do
@@ -137,28 +137,28 @@ end;
 
 procedure TMockSmartCaptcha.AddMockResponse(StatusCode: Integer; const Body: string);
 var
-  Resp: TMockResponse;
+  aResp: TMockResponse;
 begin
-  Resp.StatusCode := StatusCode;
-  Resp.Body := Body;
-  Resp.ShouldThrow := False;
-  Resp.ExceptionMessage := '';
+  aResp.StatusCode := StatusCode;
+  aResp.Body := Body;
+  aResp.ShouldThrow := False;
+  aResp.ExceptionMessage := '';
 
   SetLength(FMockResponses, Length(FMockResponses) + 1);
-  FMockResponses[High(FMockResponses)] := Resp;
+  FMockResponses[High(FMockResponses)] := aResp;
 end;
 
 procedure TMockSmartCaptcha.AddMockException(const ExceptionMessage: string);
 var
-  Resp: TMockResponse;
+  aResp: TMockResponse;
 begin
-  Resp.StatusCode := 0;
-  Resp.Body := '';
-  Resp.ShouldThrow := True;
-  Resp.ExceptionMessage := ExceptionMessage;
+  aResp.StatusCode := 0;
+  aResp.Body := '';
+  aResp.ShouldThrow := True;
+  aResp.ExceptionMessage := ExceptionMessage;
 
   SetLength(FMockResponses, Length(FMockResponses) + 1);
-  FMockResponses[High(FMockResponses)] := Resp;
+  FMockResponses[High(FMockResponses)] := aResp;
 end;
 
 procedure TMockSmartCaptcha.ResetMockResponses;
