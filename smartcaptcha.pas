@@ -86,8 +86,8 @@ begin
 
     aPostData := TStringList.Create;
     try
-      aPostData.AddPair('secret', EncodeURLElement(FConfig.ServerKey));
-      aPostData.AddPair('token', EncodeURLElement(aToken));
+      aPostData.AddPair('secret', FConfig.ServerKey);
+      aPostData.AddPair('token', aToken);
       if not aIP.IsEmpty then
         aPostData.AddPair('ip', aIP);
       aHTTP.AddHeader('User-Agent', 'YandexSmartCaptcha-FPC/1.0');
@@ -97,7 +97,7 @@ begin
 
         DoLog(etDebug, 'SmartCaptcha response: HTTP %d, body length: %d', [aResponseCode, Length(aResponse)]);
 
-        if aResponseCode <> 200 then begin
+        if aResponseCode = 500 then begin
           FLastError := Format('HTTP error %d: %s', [aResponseCode, aResponse]);
           DoLog(etError, 'SmartCaptcha HTTP error: %s', [FLastError]);
           Exit;
